@@ -1,5 +1,8 @@
 单局游戏：
 .\.venv\Scripts\lballm.exe --config .\config\local.yaml --verbose
+日志位置：
+agent trace：logs\lballm-agent-时间-模型\
+游戏进程日志：logs\时间\12346.log
 
 多模型批量实验：（默认每个模型三局游戏）
 cd 路径\Luck_be_a_Landlord_Agent\lballm
@@ -8,4 +11,4 @@ uv run python scripts\run_experiments.py --config config\experiments.yaml --dry-
 正式运行：
 uv run python scripts\run_experiments.py --config config\experiments.yaml
 日志位置：
-logs\experiments\lballm-multi-model\
+logs\experiments\时间戳\results.jsonl
