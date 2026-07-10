@@ -1,0 +1,18 @@
+provider: qwen
+model: qwen-plus
+base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+host: 127.0.0.1
+port: 12346
+strategy: default
+# Optional safety limit. Omit or leave unset to run until the game naturally ends.
+# max_steps: 300
+start_game: true
+start_action: new
+fallback_to_heuristic: true
+# game_path: C:\Program Files (x86)\Steam\steamapps\common\Luck be a Landlord\Luck be a Landlord.exe
+logs_path: logs
+trace_enabled: true
+# trace_path: logs/lballm-agent.jsonl
+model_config:
+  parallel_tool_calls: false
+  tool_choice: auto

@@ -1,0 +1,108 @@
+{
+  "SLOTS": [
+    {
+      "type": "function",
+      "function": {
+        "name": "spin",
+        "description": "Start the next spin. This resolves the active slot grid and advances rent timing.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "reasoning": {"type": "string"}
+          },
+          "required": []
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "remove_symbol",
+        "description": "Spend removal_cost removal tokens to remove one listed current inventory symbol by exact type string. Valid only in SLOTS with a symbol from removable_symbols.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "symbol": {"type": "string"},
+            "reasoning": {"type": "string"}
+          },
+          "required": ["symbol"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "destroy_item",
+        "description": "Manually destroy one listed destroyable item by exact type string. Valid only in SLOTS with an item from destroyable_items.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "item": {"type": "string"},
+            "reasoning": {"type": "string"}
+          },
+          "required": ["item"]
+        }
+      }
+    }
+  ],
+  "CHOICE": [
+    {
+      "type": "function",
+      "function": {
+        "name": "choose",
+        "description": "Resolve the current choice event by selecting one visible option from choices by exact type string. Do not use this to skip or reroll.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "choice": {"type": "string"},
+            "reasoning": {"type": "string"}
+          },
+          "required": ["choice"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "skip",
+        "description": "Decline the current offered choices and add none of them. Use this instead of choose when the intended action is skip.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "reasoning": {"type": "string"}
+          },
+          "required": []
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "reroll_choices",
+        "description": "Spend one reroll token to replace the current offered choices. This adds none of the current offered choices. This action is not the same as choosing an offered item or symbol named reroll.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "reasoning": {"type": "string"}
+          },
+          "required": []
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "press_button",
+        "description": "Press one visible event button by zero-based index.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "index": {"type": "integer", "minimum": 0},
+            "reasoning": {"type": "string"}
+          },
+          "required": ["index"]
+        }
+      }
+    }
+  ]
+}

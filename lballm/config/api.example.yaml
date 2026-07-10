@@ -1,0 +1,44 @@
+# Copy this file to local.yaml, then fill api_key or use DASHSCOPE_API_KEY.
+# Do not share local.yaml if it contains a real key.
+
+provider: qwen
+model: qwen-plus
+base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+
+# Safer option: leave this empty and set DASHSCOPE_API_KEY in PowerShell.
+# Direct YAML option: replace the placeholder with your real DashScope key.
+api_key: ""
+
+host: 127.0.0.1
+port: 12346
+strategy: default
+# Optional safety limit. Omit or leave unset to run until the game naturally ends.
+# max_steps: 300
+
+# true: lballm starts the patched game process.
+# false: connect to a game that you already started with lbalbot.
+start_game: true
+
+# new: start a fresh run from title.
+# continue: continue existing save from title.
+start_action: new
+
+# If Qwen returns no valid tool call once, use the deterministic local policy
+# for that step instead of getting stuck.
+fallback_to_heuristic: true
+
+# Optional explicit game path. The default finds ..\dll\Luck be a Landlord.exe
+# when you run from the lballm directory.
+# game_path: 路径\Luck_be_a_Landlord_Agent\dll\Luck be a Landlord.exe
+
+logs_path: logs
+
+# Detailed JSONL trace. Records gamestate, prompts, model responses,
+# tool calls, and executed game actions.
+trace_enabled: true
+# trace_path: logs/lballm-agent.jsonl
+
+model_config:
+  parallel_tool_calls: false
+  tool_choice: auto
+  temperature: 0.2

@@ -1,0 +1,32 @@
+# Multi-model experiment runner config.
+#
+# Run from the lballm directory:
+#   uv run python scripts/run_experiments.py --config config/experiments.yaml
+#
+# Preview without starting games:
+#   uv run python scripts/run_experiments.py --config config/experiments.yaml --dry-run
+
+base_config: local.yaml
+runs_per_model: 3
+# Metadata written to results.jsonl. Output directories are timestamped per run.
+experiment_name: lballm-multi-model
+logs_root: logs/experiments
+
+# Optional shared overrides applied after base_config and before each model.
+overrides:
+  start_game: true
+  start_action: new
+  trace_enabled: true
+
+models:
+  - name: gpt-5.4-mini
+    provider: openai
+    model: gpt-5.4-mini
+
+  - name: gpt-5.4
+    provider: openai
+    model: gpt-5.4
+
+  - name: gpt-5.5
+    provider: openai
+    model: gpt-5.5

@@ -1,0 +1,11 @@
+单局游戏：
+.\.venv\Scripts\lballm.exe --config .\config\local.yaml --verbose
+
+多模型批量实验：（默认每个模型三局游戏）
+cd 路径\Luck_be_a_Landlord_Agent\lballm
+先预览计划：
+uv run python scripts\run_experiments.py --config config\experiments.yaml --dry-run
+正式运行：
+uv run python scripts\run_experiments.py --config config\experiments.yaml
+日志位置：
+logs\experiments\lballm-multi-model\

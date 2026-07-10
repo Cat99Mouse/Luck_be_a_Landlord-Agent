@@ -1,0 +1,21 @@
+[project]
+name = "lbalbot"
+version = "0.1.0"
+description = "JSON-RPC automation bridge for Luck be a Landlord"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "httpx>=0.28.1",
+  "typer>=0.15",
+]
+
+[project.scripts]
+lbalbot = "lbalbot.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+lint.extend-select = ["I"]
+

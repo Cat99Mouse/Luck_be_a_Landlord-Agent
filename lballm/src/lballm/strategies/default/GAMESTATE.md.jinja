@@ -1,0 +1,143 @@
+State: {{ G.get("state") }}{% if G.get("event") %} / event={{ G.get("event") }}{% endif %} / stable={{ G.get("stable") }}
+{% set rent_values = G.get("rent_values") or [] %}
+{% set next_rent = rent_values[0] if rent_values|length > 0 else none %}
+{% set spins_until_rent = rent_values[1] if rent_values|length > 1 else none %}
+{% set effective_coins = G.get("effective_coins") %}
+{% set rent_gap = next_rent - effective_coins if next_rent is not none and effective_coins is not none else "?" %}
+
+Resources:
+- coins={{ G.get("coins") }}, queued_coins={{ G.get("queued_coins") }}, effective_coins={{ G.get("effective_coins") }}
+- spins_taken={{ G.get("spins") }}, next_rent={{ next_rent if next_rent is not none else "?" }}, rent_gap={{ rent_gap }}, spins_until_rent={{ spins_until_rent if spins_until_rent is not none else "?" }}, rent_values={{ rent_values }}, times_rent_paid={{ G.get("times_rent_paid") }}, times_to_pay_rent={{ G.get("times_to_pay_rent") }}
+- reroll_tokens={{ G.get("reroll_tokens") }}, removal_tokens={{ G.get("removal_tokens") }}, essence_tokens={{ G.get("essence_tokens") }}
+- removal_cost={{ G.get("removal_cost") }}
+- current_floor={{ G.get("current_floor") }}, landlord_hp={{ G.get("landlord_hp") }}/{{ G.get("landlord_max_hp") }}
+{% set show_deck_facts = G.get("state") == "SLOTS" or ((G.get("choices") or []) | length > 0) %}
+{% if show_deck_facts %}
+{% set deck = namespace(symbol_count_total=0, display_cap=0, gray_pepper_active=false) %}
+{% for s in G.get("symbol_inventory") or [] %}
+{% set deck.symbol_count_total = deck.symbol_count_total + (s.get("count") or 0) %}
+{% endfor %}
+{% for r in G.get("symbols") or [] %}
+{% set deck.display_cap = deck.display_cap + ((r.get("icon_types") or []) | length) %}
+{% endfor %}
+{% for item in G.get("items") or [] %}
+{% if item.get("type") == "gray_pepper" and not item.get("destroyed") and not item.get("disabled") %}
+{% set deck.gray_pepper_active = true %}
+{% endif %}
+{% endfor %}
+{% set display_cap = deck.display_cap %}
+{% set over_cap = deck.symbol_count_total - display_cap if display_cap > 0 and deck.symbol_count_total > display_cap else 0 %}
+
+Deck facts:
+- symbol_count_total={{ deck.symbol_count_total }}, display_cap={{ display_cap if display_cap > 0 else "?" }}, over_cap={{ over_cap }}, reroll_tokens={{ G.get("reroll_tokens") }}, removal_tokens={{ G.get("removal_tokens") }}, gray_pepper_active={{ "true" if deck.gray_pepper_active else "false" }}
+{% endif %}
+
+Notes:
+- effective_coins = coins + queued_coins. queued_coins is pending coin animation, not next-spin income.
+- rent_gap = next_rent - effective_coins. Positive rent_gap means the current money is short of rent; zero or negative means current money can pay rent.
+
+Run memory:
+{% set cycle = M.get("current_rent_cycle") %}
+Current rent cycle observed by this agent run:
+{% if cycle %}
+- target={{ cycle.get("rent_target") }}, spins_used={{ cycle.get("spins_used") }}/{{ cycle.get("spins_total") }}, spins_remaining={{ cycle.get("spins_remaining") }}, start_effective_coins={{ cycle.get("cycle_start_effective_coins") }}, current_effective_coins={{ cycle.get("current_effective_coins") }}, rent_gap={{ cycle.get("rent_gap") }}, total_net_gain={{ cycle.get("net_gain") }}, spin_net_gain={{ cycle.get("spin_net_gain") }}, spins_recorded={{ cycle.get("spins_recorded") }}
+{% else %}
+- unavailable
+{% endif %}
+Recent spin net income:
+{% if M.get("recent_spin_income") %}
+{% for spin in M.get("recent_spin_income") %}
+- step={{ spin.get("step") }}, net_gain={{ spin.get("net_gain") }}, before={{ spin.get("before_effective_coins") }}, after={{ spin.get("after_effective_coins") }}, result_state={{ spin.get("result_state") }}, rent_values={{ spin.get("rent_values") }}
+{% endfor %}
+{% else %}
+- none
+{% endif %}
+Recent decisions:
+{% if M.get("recent_decisions") %}
+{% for d in M.get("recent_decisions") %}
+- step={{ d.get("step") }}, source={{ d.get("source") }}, action={{ d.get("action") }}{% if d.get("target") %}, target=`{{ d.get("target") }}`{% endif %}, result_state={{ d.get("result_state") }}, effective_coins={{ d.get("coins") }}, rent_values={{ d.get("rent_values") }}
+  {% if d.get("reasoning") %}reasoning: {{ d.get("reasoning") }}{% endif %}
+{% endfor %}
+{% else %}
+- none
+{% endif %}
+Permanent changes made by the agent:
+{% set changes = M.get("permanent_changes") or {} %}
+- previously_removed_symbols={% if changes.get("previously_removed_symbols") %}{{ changes.get("previously_removed_symbols") }}{% else %}none{% endif %}
+- destroyed_items={% if changes.get("destroyed_items") %}{{ changes.get("destroyed_items") }}{% else %}none{% endif %}
+
+Pre-spin actions:
+{% if G.get("removable_symbols") %}
+Removable symbols:
+{% for s in G.get("removable_symbols") %}
+- type=`{{ s.get("type") }}`{% if s.get("name") %}, name="{{ s.get("name") }}"{% endif %}, count={{ s.get("count") }}, removal_cost={{ s.get("removal_cost") }}{% if s.get("rarity") %}, rarity={{ s.get("rarity") }}{% endif %}{% if s.get("value") %}, value={{ s.get("value") }}{% endif %}
+  {% if s.get("description") %}effect: {{ s.get("description") }}{% endif %}
+  {% if s.get("groups") %}groups: {{ s.get("groups") | join(", ") }}{% endif %}
+{% endfor %}
+{% else %}
+Removable symbols: none
+{% endif %}
+{% if G.get("destroyable_items") %}
+Destroyable items:
+{% for item in G.get("destroyable_items") %}
+- type=`{{ item.get("type") }}`{% if item.get("name") %}, name="{{ item.get("name") }}"{% endif %}, count={{ item.get("count") }}, destroy_counters={{ item.get("destroy_counters") }}{% if item.get("manually_destroyable") is not none %}, manually_destroyable={{ item.get("manually_destroyable") }}{% endif %}{% if item.get("rarity") %}, rarity={{ item.get("rarity") }}{% endif %}
+  {% if item.get("description") %}effect: {{ item.get("description") }}{% endif %}
+  {% if item.get("groups") %}groups: {{ item.get("groups") | join(", ") }}{% endif %}
+{% endfor %}
+{% else %}
+Destroyable items: none
+{% endif %}
+
+Available choices:
+{% if G.get("choices") %}
+{% for c in G.get("choices") %}
+- type=`{{ c.get("type") }}`{% if c.get("name") %}, name="{{ c.get("name") }}"{% endif %}{% if c.get("rarity") %}, rarity={{ c.get("rarity") }}{% endif %}{% if c.get("value") %}, value={{ c.get("value") }}{% endif %}
+  {% if c.get("description") %}effect: {{ c.get("description") }}{% endif %}
+  {% if c.get("groups") %}groups: {{ c.get("groups") | join(", ") }}{% endif %}
+  {% if c.get("values") %}values: {{ c.get("values") | join(", ") }}{% endif %}
+{% endfor %}
+{% else %}
+- none
+{% endif %}
+
+Visible event buttons:
+{% if G.get("buttons") %}
+{% for b in G.get("buttons") %}
+- index={{ loop.index0 }}, call={{ b.get("call") }}, args={{ b.get("args") }}, text="{{ b.get("text") }}"
+{% endfor %}
+{% else %}
+- none
+{% endif %}
+
+Current items:
+{% if G.get("items") %}
+{% for item in G.get("items") %}
+- type=`{{ item.get("type") }}`{% if item.get("name") %}, name="{{ item.get("name") }}"{% endif %}{% if item.get("count") is not none %}, count={{ item.get("count") }}{% endif %}{% if item.get("item_count") is not none %}, item_count={{ item.get("item_count") }}{% endif %}{% if item.get("destroyable") is not none %}, destroyable={{ item.get("destroyable") }}{% endif %}{% if item.get("manually_destroyable") is not none %}, manually_destroyable={{ item.get("manually_destroyable") }}{% endif %}{% if item.get("destroyed") is not none %}, destroyed={{ item.get("destroyed") }}{% endif %}{% if item.get("rarity") %}, rarity={{ item.get("rarity") }}{% endif %}
+  {% if item.get("description") %}effect: {{ item.get("description") }}{% endif %}
+  {% if item.get("groups") %}groups: {{ item.get("groups") | join(", ") }}{% endif %}
+{% endfor %}
+{% else %}
+- none
+{% endif %}
+
+Current symbol inventory:
+{% if G.get("symbol_inventory") %}
+{% for s in G.get("symbol_inventory") %}
+- type=`{{ s.get("type") }}`{% if s.get("name") %}, name="{{ s.get("name") }}"{% endif %}, count={{ s.get("count") }}{% if s.get("rarity") %}, rarity={{ s.get("rarity") }}{% endif %}{% if s.get("value") %}, value={{ s.get("value") }}{% endif %}{% if s.get("value_text") %}, value_text="{{ s.get("value_text") }}"{% endif %}{% if s.get("permanent_bonus") %}, permanent_bonus="{{ s.get("permanent_bonus") }}"{% endif %}{% if s.get("permanent_multiplier") %}, permanent_multiplier="{{ s.get("permanent_multiplier") }}"{% endif %}{% if s.get("times_displayed") is not none %}, times_displayed={{ s.get("times_displayed") }}{% endif %}
+  {% if s.get("description") %}effect: {{ s.get("description") }}{% endif %}
+  {% if s.get("groups") %}groups: {{ s.get("groups") | join(", ") }}{% endif %}
+{% endfor %}
+{% else %}
+- unavailable
+{% endif %}
+
+Reels:
+{% for r in G.get("symbols", []) %}
+- reel {{ loop.index0 }}: {{ r.get("icon_types") | join(", ") }}
+{% endfor %}
+
+{% if last_error %}
+Last tool error: {{ last_error }}
+{% endif %}
+
+Return exactly one tool call.

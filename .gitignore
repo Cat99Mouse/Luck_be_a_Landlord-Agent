@@ -1,0 +1,46 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local config and secrets
+.env
+.env.*
+lballm/config/local.yaml
+
+# Runtime logs, traces, and experiment artifacts
+logs/
+logs*/
+**/logs/
+**/logs*/
+*.log
+*.jsonl
+aaa.json
+
+# Local game binaries/assets. Keep these out of the repo.
+dll/
+
+# Build/package artifacts
+build/
+dist/
+*.egg-info/
+
+# Editor and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
