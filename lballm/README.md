@@ -159,6 +159,64 @@ uv run python scripts\run_experiments.py --config config\experiments.yaml --cont
 When `--control-mode chatbot` is used, entries that still have
 `strategy: default` are normalized to `strategy: chatbot`.
 
+## Parallel experiment runner
+
+`scripts/run_parallel.py` runs many games concurrently, each in a fully isolated
+subprocess, and aggregates the results per model.
+
+```bash
+uv run python scripts/run_parallel.py --config config/experiments.yaml --runs 10 --parallel 4
+```
+
+- `--runs N` overrides `runs_per_model` from the YAML.
+- `--parallel N` caps how many games run at the same time.
+- `--base-port` sets the first bridge port (default `12346`).
+- `--dry-run` prints the plan without launching any game.
+
+How the parallelism works:
+
+- The plan expands to `models × runs` specs. Each spec gets a unique bridge port
+  (`base_port + i`), its own run directory `<exp>/<model>/run-NN/`, and a config
+  merged as `base -> overrides -> model`.
+- An `asyncio.Semaphore(parallel)` gates concurrency: all tasks are created up
+  front, but only `parallel` of them run at once; as one finishes it releases the
+  permit and the next queued run starts.
+- Each run is a separate OS subprocess (`asyncio.create_subprocess_exec`) with an
+  isolated `HOME`/`XDG_*` seeded from a reference home (saves excluded), so
+  concurrent games never share ports, saves, settings, or logs.
+- A crashing run (returncode != 0) only affects its own record; the others keep
+  going.
+
+The core loop bounds concurrency with a semaphore and gathers every run:
+
+```python
+sem = asyncio.Semaphore(parallel)
+tasks = [
+    asyncio.create_task(_run_one(spec, sem, i, len(plan), reference_home))
+    for i, spec in enumerate(plan, 1)
+]
+records = await asyncio.gather(*tasks)
+```
+
+Each `_run_one` acquires a permit, then launches an isolated subprocess:
+
+```python
+async with sem:  # only `parallel` runs hold a permit at once
+    env = os.environ.copy()
+    env["HOME"] = str(home)                              # isolated save dir
+    env["XDG_DATA_HOME"] = str(home / ".local" / "share")
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, cwd=str(PROJECT_ROOT), env=env,
+        stdout=log, stderr=asyncio.subprocess.STDOUT,
+    )
+    rc = await proc.wait()
+    summary = _parse_trace(spec["config"]["trace_path"])  # recover outcome
+```
+
+Results are written to `<output_dir>/results.jsonl`, and a per-model summary
+(`runs`, `ok`, `game_over`, `avg_coins`, `avg_rent_paid`, `max_floor`) is printed
+when the batch completes.
+
 ## Logs and traces
 
 Detailed JSONL traces are enabled by default and written under `logs/`.

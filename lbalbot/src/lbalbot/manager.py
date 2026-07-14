@@ -50,7 +50,7 @@ class LBALInstance:
         game_path = Path(self._config.game_path or "")
         with self._log_path.open("w") as log:
             self._process = subprocess.Popen(
-                [str(game_path)],
+                [str(game_path), "--audio-driver", "Dummy"],
                 cwd=str(game_path.parent),
                 env=env,
                 stdout=log,

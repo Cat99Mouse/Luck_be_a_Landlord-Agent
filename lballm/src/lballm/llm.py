@@ -15,7 +15,12 @@ class LLMClient:
 
     def __init__(self, config: Config) -> None:
         self.config = config
-        self.client = AsyncOpenAI(api_key=config.api_key, base_url=config.base_url)
+        self.client = AsyncOpenAI(
+            api_key=config.api_key,
+            base_url=config.base_url,
+            timeout=120.0,
+            max_retries=5,
+        )
 
     async def chat(
         self,

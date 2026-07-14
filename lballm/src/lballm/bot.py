@@ -8,6 +8,7 @@ import logging
 import re
 from typing import Any
 
+import openai
 from lbalbot import LBALClient, LBALError
 
 from .chatbot_memory import ChatbotMemory
@@ -291,10 +292,20 @@ class Bot:
             llm_turn=0,
             artifact=request_artifact,
         )
-        response = await self.llm.chat(
-            messages=messages,
-            tools=tools,
-        )
+        try:
+            response = await self.llm.chat(
+                messages=messages,
+                tools=tools,
+            )
+        except openai.APIError as e:
+            self.last_error = f"LLM API error: {type(e).__name__}: {e}"
+            self.trace.write(
+                "llm_api_error",
+                step=step,
+                error_type=type(e).__name__,
+                error=str(e),
+            )
+            return await self._fallback_choice(gamestate, step=step)
         response_payload = jsonable(response)
         response_artifact = self.trace.write_llm_artifact(
             "response",

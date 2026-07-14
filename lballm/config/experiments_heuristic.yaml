@@ -1,0 +1,25 @@
+# Parallel heuristic experiment — no API key required.
+#
+# Run from the lballm directory:
+#   uv run python scripts/run_parallel.py --config config/experiments_heuristic.yaml --parallel 3
+#
+# Preview the plan only:
+#   uv run python scripts/run_parallel.py --config config/experiments_heuristic.yaml --dry-run
+
+experiment_name: lballm-parallel-heuristic
+logs_root: logs/experiments
+runs_per_model: 4
+base_port: 12346
+
+# game_path auto-detects the copied app under ../dll; set explicitly to override.
+# game_path: "/absolute/path/to/Luck be a Landlord.app/Contents/MacOS/Luck be a Landlord"
+
+overrides:
+  start_game: true
+  start_action: new
+  trace_enabled: true
+  max_steps: 30
+
+models:
+  - name: heuristic
+    provider: heuristic
