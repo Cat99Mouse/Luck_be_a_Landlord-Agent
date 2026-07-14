@@ -99,6 +99,33 @@ uv run lballm --provider heuristic --max-steps 20
 
 默认日志会按模式保存到 `lballm/logs/agent/` 或 `lballm/logs/chatbot/`。每局运行目录包含主 trace、`requests.jsonl`、`responses.jsonl`，agent 模式还会记录 `global_memory.jsonl`。详见 [LBALLM 说明](./lballm/README.md)。
 
+## 并行实验
+
+`lballm/scripts/run_parallel.py` 可以并行跑多局游戏，每局都是一个完全隔离的子进程，跑完后按模型汇总结果：
+
+```bash
+cd lballm
+uv run python scripts/run_parallel.py --config config/experiments.yaml --runs 10 --parallel 4
+```
+
+- `--runs N`：覆盖 YAML 里的 `runs_per_model`。
+- `--parallel N`：同时最多跑几局。
+- `--base-port`：首个 bridge 端口（默认 `12346`）。
+- `--dry-run`：只打印计划，不真正启动游戏。
+
+并行逻辑：计划展开成 `模型 × 局数` 个 spec，每个 spec 分到唯一端口（`base_port + i`）、独立运行目录和独立 `HOME`/`XDG_*`（从参考 home 拷贝、排除存档），因此并发的多局不共享端口/存档/日志。`asyncio.Semaphore` 作为闸门，所有任务一次性创建、但同时只有 `parallel` 个真正运行，某局结束即释放名额、队列里下一局补上：
+
+```python
+sem = asyncio.Semaphore(parallel)
+tasks = [
+    asyncio.create_task(_run_one(spec, sem, i, len(plan), reference_home))
+    for i, spec in enumerate(plan, 1)
+]
+records = await asyncio.gather(*tasks)
+```
+
+每个 `_run_one` 先抢名额，再以隔离环境启动子进程；某局崩溃（returncode != 0）只影响自己那条记录，不拖累其他局。结果写入 `<output_dir>/results.jsonl`，并在结束时打印每模型汇总（`runs` / `ok` / `game_over` / `avg_coins` / `avg_rent_paid` / `max_floor`）。
+
 ## 重要说明
 
 - 不要提交 `dll/`，其中包含本地游戏文件。
@@ -222,6 +249,42 @@ Default logs are split into `lballm/logs/agent/` or `lballm/logs/chatbot/`.
 Each run directory contains the main trace, `requests.jsonl`, and
 `responses.jsonl`; agent mode also records `global_memory.jsonl`. See
 [LBALLM README](./lballm/README.md) for details.
+
+## Parallel Experiments
+
+`lballm/scripts/run_parallel.py` runs many games concurrently, each in a fully
+isolated subprocess, and aggregates the results per model:
+
+```bash
+cd lballm
+uv run python scripts/run_parallel.py --config config/experiments.yaml --runs 10 --parallel 4
+```
+
+- `--runs N` overrides `runs_per_model` from the YAML.
+- `--parallel N` caps how many games run at the same time.
+- `--base-port` sets the first bridge port (default `12346`).
+- `--dry-run` prints the plan without launching any game.
+
+The plan expands to `models × runs` specs. Each spec gets a unique bridge port
+(`base_port + i`), its own run directory, and an isolated `HOME`/`XDG_*` seeded
+from a reference home (saves excluded), so concurrent games never share ports,
+saves, or logs. An `asyncio.Semaphore` gates concurrency: all tasks are created
+up front, but only `parallel` run at once; as one finishes it releases the permit
+and the next queued run starts:
+
+```python
+sem = asyncio.Semaphore(parallel)
+tasks = [
+    asyncio.create_task(_run_one(spec, sem, i, len(plan), reference_home))
+    for i, spec in enumerate(plan, 1)
+]
+records = await asyncio.gather(*tasks)
+```
+
+Each `_run_one` acquires a permit, then launches the isolated subprocess. A
+crashing run (returncode != 0) only affects its own record. Results are written
+to `<output_dir>/results.jsonl`, and a per-model summary (`runs`, `ok`,
+`game_over`, `avg_coins`, `avg_rent_paid`, `max_floor`) is printed at the end.
 
 ## Important Notes
 
