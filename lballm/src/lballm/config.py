@@ -25,6 +25,7 @@ DEFAULT_MODEL_CONFIG: dict[str, Any] = {
 }
 
 ENV_MAP: dict[str, str] = {
+    "control_mode": "LBALLM_CONTROL_MODE",
     "provider": "LBALLM_PROVIDER",
     "model": "LBALLM_MODEL",
     "strategy": "LBALLM_STRATEGY",
@@ -46,6 +47,7 @@ INT_FIELDS = frozenset({"port", "max_steps"})
 BOOL_FIELDS = frozenset({"start_game", "fallback_to_heuristic", "trace_enabled"})
 STRING_FIELDS = frozenset(
     {
+        "control_mode",
         "provider",
         "model",
         "strategy",
@@ -131,6 +133,7 @@ def _load_from_args(args: Namespace) -> dict[str, Any]:
 class Config:
     """Agent configuration."""
 
+    control_mode: str = "agent"
     provider: str = "qwen"
     model: str = "qwen-plus"
     strategy: str = "default"
@@ -165,9 +168,14 @@ class Config:
             data.update(yaml_data)
         if args:
             data.update(_load_from_args(args))
-        return cls(**data)
+        config = cls(**data)
+        if config.control_mode == "chatbot" and config.strategy == "default":
+            config.strategy = "chatbot"
+        return config
 
     def validate(self) -> None:
+        if self.control_mode not in {"agent", "chatbot"}:
+            raise ValueError("control_mode must be one of: agent, chatbot")
         if self.provider not in {"qwen", "openai", "heuristic"}:
             raise ValueError("provider must be one of: qwen, openai, heuristic")
         if self.start_action not in {"new", "continue"}:
@@ -180,3 +188,10 @@ class Config:
             raise ValueError("max_steps must be >= 1")
         if not (STRATEGIES_DIR / self.strategy).exists():
             raise ValueError(f"strategy not found: {self.strategy}")
+
+    def effective_logs_path(self) -> str:
+        """Return the mode-specific logs directory for default log settings."""
+        normalized = str(Path(self.logs_path)).replace("\\", "/").strip("/")
+        if normalized in {"logs", "./logs"}:
+            return str(Path(self.logs_path) / self.control_mode)
+        return self.logs_path

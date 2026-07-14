@@ -18,6 +18,7 @@ class RunTrace:
         trace_path: str | None = None,
         enabled: bool = True,
         model_label: str | None = None,
+        run_label: str = "lballm-agent",
     ) -> None:
         self.enabled = enabled
         self.path: Path | None = None
@@ -36,7 +37,8 @@ class RunTrace:
                 self.path = self.artifact_dir / f"{requested.name}.jsonl"
         else:
             timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-            run_name = f"lballm-agent-{timestamp}"
+            safe_run_label = self._safe_path_part(run_label) or "lballm-agent"
+            run_name = f"{safe_run_label}-{timestamp}"
             safe_model = self._safe_path_part(model_label)
             if safe_model:
                 run_name = f"{run_name}-{safe_model}"
@@ -86,6 +88,25 @@ class RunTrace:
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(data, ensure_ascii=False, default=str) + "\n")
         return f"{path}#L{index}"
+
+    def write_global_memory_update(
+        self,
+        *,
+        step: int | None,
+        payload: dict[str, Any],
+    ) -> str | None:
+        """Append an agent global-memory update to global_memory.jsonl."""
+        if not self.enabled or self.artifact_dir is None:
+            return None
+        path = self.artifact_dir / "global_memory.jsonl"
+        data = {
+            "ts": datetime.now().isoformat(timespec="milliseconds"),
+            "step": step,
+            **payload,
+        }
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(data, ensure_ascii=False, default=str) + "\n")
+        return str(path)
 
     def _llm_artifact_path(self, kind: str) -> Path:
         if self.artifact_dir is None:

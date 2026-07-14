@@ -28,6 +28,7 @@ def _resolve_config_path(value: str | None) -> Path | None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Play Luck be a Landlord with an LLM")
     parser.add_argument("--config", help="Path to YAML config")
+    parser.add_argument("--control-mode", choices=["agent", "chatbot"])
     parser.add_argument("--provider", choices=["qwen", "openai", "heuristic"])
     parser.add_argument("--model")
     parser.add_argument("--strategy")
@@ -63,30 +64,27 @@ def main() -> None:
 
 
 async def _run(config: Config) -> dict:
+    bot = Bot(config)
+    if bot.trace.path:
+        logging.getLogger(__name__).info("Agent trace: %s", bot.trace.path)
+    if bot.trace.artifact_dir:
+        logging.getLogger(__name__).info(
+            "LLM artifacts: %s",
+            bot.trace.artifact_dir,
+        )
+
     if not config.start_game:
-        bot = Bot(config)
-        if bot.trace.path:
-            logging.getLogger(__name__).info("Agent trace: %s", bot.trace.path)
-        if bot.trace.artifact_dir:
-            logging.getLogger(__name__).info(
-                "LLM artifacts: %s",
-                bot.trace.artifact_dir,
-            )
         return await bot.play()
 
     bot_cfg = LBALBotConfig.from_env()
     bot_cfg.host = config.host
     bot_cfg.port = config.port
-    bot_cfg.logs_path = config.logs_path
+    bot_cfg.logs_path = config.effective_logs_path()
+    if bot.trace.artifact_dir:
+        bot_cfg.session_log_dir = str(bot.trace.artifact_dir)
     if config.game_path is not None:
         bot_cfg.game_path = config.game_path
-    async with LBALInstance(bot_cfg):
-        bot = Bot(config)
-        if bot.trace.path:
-            logging.getLogger(__name__).info("Agent trace: %s", bot.trace.path)
-        if bot.trace.artifact_dir:
-            logging.getLogger(__name__).info(
-                "LLM artifacts: %s",
-                bot.trace.artifact_dir,
-            )
+    async with LBALInstance(bot_cfg) as instance:
+        if instance.log_path:
+            logging.getLogger(__name__).info("Game log: %s", instance.log_path)
         return await bot.play()

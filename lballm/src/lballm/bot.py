@@ -10,6 +10,7 @@ from typing import Any
 
 from lbalbot import LBALClient, LBALError
 
+from .chatbot_memory import ChatbotMemory
 from .config import Config
 from .llm import LLMClient
 from .memory import RunMemory
@@ -32,15 +33,18 @@ class Bot:
         self.client = LBALClient(host=config.host, port=config.port)
         self.llm = None if config.provider == "heuristic" else LLMClient(config)
         self.trace = RunTrace(
-            logs_path=config.logs_path,
+            logs_path=config.effective_logs_path(),
             trace_path=config.trace_path,
             enabled=config.trace_enabled,
             model_label=(
                 "heuristic" if config.provider == "heuristic" else config.model
             ),
+            run_label=f"lballm-{config.control_mode}",
         )
         self.last_error: str | None = None
-        self.memory = RunMemory()
+        self.memory = (
+            ChatbotMemory() if config.control_mode == "chatbot" else RunMemory()
+        )
 
     async def play(self) -> dict[str, Any]:
         """Run a game loop and return the final gamestate."""
@@ -48,7 +52,9 @@ class Bot:
             self.trace.write(
                 "run_start",
                 provider=self.config.provider,
+                control_mode=self.config.control_mode,
                 model=self.config.model,
+                strategy=self.config.strategy,
                 base_url=self.config.base_url,
                 max_steps=self.config.max_steps,
                 start_action=self.config.start_action,
@@ -99,7 +105,10 @@ class Bot:
                                     step=step,
                                 )
                             else:
-                                gamestate = await self._llm_choice(gamestate, step=step)
+                                gamestate = await self._model_choice(
+                                    gamestate,
+                                    step=step,
+                                )
                         else:
                             self.memory.begin_spin(gamestate, step=step)
                             gamestate = await self._call_game(
@@ -124,7 +133,10 @@ class Bot:
                                 step=step,
                             )
                         else:
-                            gamestate = await self._llm_choice(gamestate, step=step)
+                            gamestate = await self._model_choice(
+                                gamestate,
+                                step=step,
+                            )
                     else:
                         await asyncio.sleep(0.25)
                         gamestate = await self._call_game(
@@ -224,7 +236,17 @@ class Bot:
         )
         return gamestate
 
-    async def _llm_choice(
+    async def _model_choice(
+        self,
+        gamestate: dict[str, Any],
+        *,
+        step: int | None = None,
+    ) -> dict[str, Any]:
+        if self.config.control_mode == "chatbot":
+            return await self._chatbot_choice(gamestate, step=step)
+        return await self._llm_choice(gamestate, step=step)
+
+    async def _chatbot_choice(
         self,
         gamestate: dict[str, Any],
         *,
@@ -249,20 +271,24 @@ class Bot:
             "request",
             step=step,
             payload={
+                "control_mode": self.config.control_mode,
                 "state": gamestate.get("state"),
                 "messages": messages,
                 "tools": tools,
                 "last_error": self.last_error,
                 "memory": memory,
+                "llm_turn": 0,
             },
         )
         self.trace.write(
             "llm_request",
             step=step,
+            control_mode=self.config.control_mode,
             state=gamestate.get("state"),
             messages=messages,
             tools=tools,
             last_error=self.last_error,
+            llm_turn=0,
             artifact=request_artifact,
         )
         response = await self.llm.chat(
@@ -273,15 +299,22 @@ class Bot:
         response_artifact = self.trace.write_llm_artifact(
             "response",
             step=step,
-            payload={"response": response_payload},
+            payload={
+                "control_mode": self.config.control_mode,
+                "response": response_payload,
+                "llm_turn": 0,
+            },
         )
         self.trace.write(
             "llm_response",
             step=step,
+            control_mode=self.config.control_mode,
             response=response_payload,
+            llm_turn=0,
             artifact=response_artifact,
         )
-        tool_calls = response.choices[0].message.tool_calls or []
+        response_message = response.choices[0].message
+        tool_calls = response_message.tool_calls or []
         if not tool_calls:
             self.last_error = "Model returned no tool call"
             return await self._fallback_choice(gamestate, step=step)
@@ -296,6 +329,7 @@ class Bot:
                 step=step,
                 tool_call=jsonable(call),
                 error=self.last_error,
+                llm_turn=0,
             )
             return await self._fallback_choice(gamestate, step=step)
 
@@ -305,109 +339,181 @@ class Bot:
             name=fn_name,
             arguments=args,
             raw_tool_call=jsonable(call),
+            llm_turn=0,
         )
+        try:
+            return await self._execute_tool_choice(
+                gamestate,
+                fn_name,
+                args,
+                step=step,
+                source="chatbot_tool",
+            )
+        except (BotError, LBALError) as e:
+            self.last_error = str(e)
+            self.trace.write(
+                "tool_error",
+                step=step,
+                name=fn_name,
+                arguments=args,
+                error_type=type(e).__name__,
+                error=str(e),
+                source="chatbot_tool",
+            )
+            return await self._fallback_choice(gamestate, step=step)
+
+    async def _llm_choice(
+        self,
+        gamestate: dict[str, Any],
+        *,
+        step: int | None = None,
+    ) -> dict[str, Any]:
+        if self.llm is None:
+            return await self._heuristic_choice(gamestate, step=step)
+        memory = self.memory.snapshot()
+        messages = [
+            {"role": "system", "content": self.strategy.render_system()},
+            {
+                "role": "user",
+                "content": self.strategy.render_state(
+                    gamestate,
+                    self.last_error,
+                    memory,
+                ),
+            },
+        ]
+        tools = self.strategy.get_tools(gamestate)
+
+        observation_calls = 0
+        llm_turn = 0
+        while True:
+            request_artifact = self.trace.write_llm_artifact(
+                "request",
+                step=step,
+                payload={
+                    "control_mode": self.config.control_mode,
+                    "state": gamestate.get("state"),
+                    "messages": messages,
+                    "tools": tools,
+                    "last_error": self.last_error,
+                    "memory": memory,
+                    "llm_turn": llm_turn,
+                },
+            )
+            self.trace.write(
+                "llm_request",
+                step=step,
+                control_mode=self.config.control_mode,
+                state=gamestate.get("state"),
+                messages=messages,
+                tools=tools,
+                last_error=self.last_error,
+                llm_turn=llm_turn,
+                artifact=request_artifact,
+            )
+            response = await self.llm.chat(
+                messages=messages,
+                tools=tools,
+            )
+            response_payload = jsonable(response)
+            response_artifact = self.trace.write_llm_artifact(
+                "response",
+                step=step,
+                payload={
+                    "control_mode": self.config.control_mode,
+                    "response": response_payload,
+                    "llm_turn": llm_turn,
+                },
+            )
+            self.trace.write(
+                "llm_response",
+                step=step,
+                control_mode=self.config.control_mode,
+                response=response_payload,
+                llm_turn=llm_turn,
+                artifact=response_artifact,
+            )
+            response_message = response.choices[0].message
+            tool_calls = response_message.tool_calls or []
+            if not tool_calls:
+                self.last_error = "Model returned no tool call"
+                return await self._fallback_choice(gamestate, step=step)
+            call = tool_calls[0]
+            fn_name = call.function.name
+            try:
+                args = json.loads(call.function.arguments or "{}")
+            except json.JSONDecodeError:
+                self.last_error = "Model returned invalid JSON arguments"
+                self.trace.write(
+                    "tool_parse_error",
+                    step=step,
+                    tool_call=jsonable(call),
+                    error=self.last_error,
+                    llm_turn=llm_turn,
+                )
+                return await self._fallback_choice(gamestate, step=step)
+
+            self.trace.write(
+                "tool_call",
+                step=step,
+                name=fn_name,
+                arguments=args,
+                raw_tool_call=jsonable(call),
+                llm_turn=llm_turn,
+            )
+
+            if fn_name != "inspect_symbol_inventory":
+                break
+            if observation_calls >= 1:
+                self.last_error = (
+                    "inspect_symbol_inventory may only be called once per decision"
+                )
+                self.trace.write(
+                    "tool_error",
+                    step=step,
+                    name=fn_name,
+                    arguments=args,
+                    error_type=BotError.__name__,
+                    error=self.last_error,
+                    llm_turn=llm_turn,
+                )
+                return await self._fallback_choice(gamestate, step=step)
+
+            observation_calls += 1
+            observation = self._render_symbol_inventory_observation(gamestate)
+            tool_call_id = self._tool_call_id(call, step=step, turn=llm_turn)
+            messages.append(
+                self._assistant_tool_message(
+                    response_message,
+                    call,
+                    tool_call_id=tool_call_id,
+                )
+            )
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": observation,
+                }
+            )
+            self.trace.write(
+                "observation_tool_result",
+                step=step,
+                name=fn_name,
+                arguments=args,
+                result=observation,
+                llm_turn=llm_turn,
+            )
+            llm_turn += 1
 
         try:
-            if fn_name == "choose":
-                if "choice" not in args:
-                    raise BotError("choose requires choice")
-                valid_choices = {
-                    str(choice.get("type"))
-                    for choice in gamestate.get("choices") or []
-                    if choice.get("type")
-                }
-                if str(args["choice"]) not in valid_choices:
-                    raise BotError(
-                        "choose choice is not visible: " + str(args["choice"])
-                    )
-                gamestate = await self._call_game(
-                    "choose",
-                    {"choice": args["choice"]},
-                    step=step,
-                    source="llm_tool",
-                )
-            elif fn_name == "skip":
-                if not self._has_button_arg(gamestate, "skip"):
-                    raise BotError("skip requires a visible skip button")
-                gamestate = await self._call_game(
-                    "skip",
-                    step=step,
-                    source="llm_tool",
-                )
-            elif fn_name in {"reroll_choices", "reroll"}:
-                if not self._has_button_arg(gamestate, "reroll_pay"):
-                    raise BotError("reroll_choices requires a visible reroll button")
-                if self._int_value(gamestate.get("reroll_tokens")) <= 0:
-                    raise BotError("reroll_choices requires reroll tokens")
-                gamestate = await self._call_game(
-                    "reroll",
-                    step=step,
-                    source="llm_tool",
-                )
-            elif fn_name == "spin":
-                self.memory.begin_spin(gamestate, step=step)
-                gamestate = await self._call_game(
-                    "spin",
-                    step=step,
-                    source="llm_tool",
-                )
-            elif fn_name == "remove_symbol":
-                if "symbol" not in args:
-                    raise BotError("remove_symbol requires symbol")
-                if not self._has_target_type(
-                    gamestate.get("removable_symbols"),
-                    args["symbol"],
-                ):
-                    raise BotError(
-                        "remove_symbol target is not removable: "
-                        + str(args["symbol"])
-                    )
-                gamestate = await self._call_game(
-                    "remove_symbol",
-                    {"symbol": args["symbol"]},
-                    step=step,
-                    source="llm_tool",
-                )
-            elif fn_name == "destroy_item":
-                if "item" not in args:
-                    raise BotError("destroy_item requires item")
-                if not self._has_target_type(
-                    gamestate.get("destroyable_items"),
-                    args["item"],
-                ):
-                    raise BotError(
-                        "destroy_item target is not destroyable: "
-                        + str(args["item"])
-                    )
-                gamestate = await self._call_game(
-                    "destroy_item",
-                    {"item": args["item"]},
-                    step=step,
-                    source="llm_tool",
-                )
-            elif fn_name == "press_button":
-                button_index = int(args.get("index", 0))
-                button = self._button_info(gamestate, button_index)
-                args = {**args, "index": button_index}
-                if button is not None:
-                    args["button"] = button
-                gamestate = await self._call_game(
-                    "button",
-                    {"index": button_index},
-                    step=step,
-                    source="llm_tool",
-                )
-            else:
-                raise BotError(f"Unknown tool: {fn_name}")
-            self.last_error = None
-            self.memory.record_decision(
+            return await self._execute_tool_choice(
+                gamestate,
+                fn_name,
+                args,
                 step=step,
-                action=fn_name,
-                arguments=args,
-                result=gamestate,
                 source="llm_tool",
             )
-            return gamestate
         except (BotError, LBALError) as e:
             self.last_error = str(e)
             self.trace.write(
@@ -419,6 +525,159 @@ class Bot:
                 error=str(e),
             )
             return await self._fallback_choice(gamestate, step=step)
+
+    async def _execute_tool_choice(
+        self,
+        gamestate: dict[str, Any],
+        fn_name: str,
+        args: dict[str, Any],
+        *,
+        step: int | None,
+        source: str,
+    ) -> dict[str, Any]:
+        if fn_name == "choose":
+            if "choice" not in args:
+                raise BotError("choose requires choice")
+            valid_choices = {
+                str(choice.get("type"))
+                for choice in gamestate.get("choices") or []
+                if choice.get("type")
+            }
+            if str(args["choice"]) not in valid_choices:
+                raise BotError("choose choice is not visible: " + str(args["choice"]))
+            result = await self._call_game(
+                "choose",
+                {"choice": args["choice"]},
+                step=step,
+                source=source,
+            )
+        elif fn_name == "skip":
+            if not self._has_button_arg(gamestate, "skip"):
+                raise BotError("skip requires a visible skip button")
+            result = await self._call_game("skip", step=step, source=source)
+        elif fn_name in {"reroll_choices", "reroll"}:
+            if not self._has_button_arg(gamestate, "reroll_pay"):
+                raise BotError("reroll_choices requires a visible reroll button")
+            if self._int_value(gamestate.get("reroll_tokens")) <= 0:
+                raise BotError("reroll_choices requires reroll tokens")
+            result = await self._call_game("reroll", step=step, source=source)
+        elif fn_name == "spin":
+            self.memory.begin_spin(gamestate, step=step)
+            result = await self._call_game("spin", step=step, source=source)
+        elif fn_name == "remove_symbol":
+            if "symbol" not in args:
+                raise BotError("remove_symbol requires symbol")
+            if not self._has_target_type(
+                gamestate.get("removable_symbols"),
+                args["symbol"],
+            ):
+                raise BotError(
+                    "remove_symbol target is not removable: " + str(args["symbol"])
+                )
+            result = await self._call_game(
+                "remove_symbol",
+                {"symbol": args["symbol"]},
+                step=step,
+                source=source,
+            )
+        elif fn_name == "destroy_item":
+            if "item" not in args:
+                raise BotError("destroy_item requires item")
+            if not self._has_target_type(
+                gamestate.get("destroyable_items"),
+                args["item"],
+            ):
+                raise BotError(
+                    "destroy_item target is not destroyable: " + str(args["item"])
+                )
+            result = await self._call_game(
+                "destroy_item",
+                {"item": args["item"]},
+                step=step,
+                source=source,
+            )
+        elif fn_name == "press_button":
+            try:
+                button_index = int(args.get("index", 0))
+            except (TypeError, ValueError):
+                raise BotError("press_button requires integer index") from None
+            button = self._button_info(gamestate, button_index)
+            if button is None:
+                raise BotError(
+                    "press_button index is not visible: " + str(button_index)
+                )
+            args = {**args, "index": button_index, "button": button}
+            result = await self._call_game(
+                "button",
+                {"index": button_index},
+                step=step,
+                source=source,
+            )
+        else:
+            raise BotError(f"Unknown tool: {fn_name}")
+
+        self.last_error = None
+        self._update_agent_global_memory(
+            step=step,
+            action=fn_name,
+            source=source,
+            args=args,
+            result=result,
+        )
+        self.memory.record_decision(
+            step=step,
+            action=fn_name,
+            arguments=args,
+            result=result,
+            source=source,
+        )
+        return result
+
+    def _update_agent_global_memory(
+        self,
+        *,
+        step: int | None,
+        action: str,
+        source: str,
+        args: dict[str, Any],
+        result: dict[str, Any],
+    ) -> None:
+        if self.config.control_mode != "agent":
+            return
+        memory_update = args.get("memory_update")
+        if not memory_update:
+            return
+        previous = getattr(self.memory, "global_memory", "")
+        self.memory.update_global(memory_update)
+        current = getattr(self.memory, "global_memory", "")
+        if current == previous:
+            return
+        self.trace.write_global_memory_update(
+            step=step,
+            payload={
+                "source": source,
+                "action": action,
+                "previous_global_memory": previous,
+                "global_memory": current,
+                "raw_memory_update_chars": len(str(memory_update)),
+                "result_state": result.get("state") if isinstance(result, dict) else None,
+                "effective_coins": (
+                    self.memory._effective_coins(result)
+                    if isinstance(result, dict)
+                    and hasattr(self.memory, "_effective_coins")
+                    else None
+                ),
+                "rent_values": (
+                    self.memory._copy_rent_values(result)
+                    if isinstance(result, dict)
+                    and hasattr(self.memory, "_copy_rent_values")
+                    else []
+                ),
+                "times_rent_paid": (
+                    result.get("times_rent_paid") if isinstance(result, dict) else None
+                ),
+            },
+        )
 
     async def _fallback_choice(
         self,
@@ -526,6 +785,89 @@ class Bot:
         return bool(
             gamestate.get("removable_symbols") or gamestate.get("destroyable_items")
         )
+
+    @classmethod
+    def _render_symbol_inventory_observation(cls, gamestate: dict[str, Any]) -> str:
+        symbols = [
+            symbol
+            for symbol in gamestate.get("symbol_inventory") or []
+            if isinstance(symbol, dict)
+        ]
+        lines = ["Full current stored symbol inventory:"]
+        if not symbols:
+            lines.append("- unavailable")
+            return "\n".join(lines)
+
+        symbol_count_total = sum(
+            cls._int_value(symbol.get("count")) for symbol in symbols
+        )
+        lines.append(f"- symbol_count_total={symbol_count_total}")
+        for symbol in symbols:
+            parts = [f"type=`{symbol.get('type')}`"]
+            cls._append_field(parts, "name", symbol.get("name"), quote=True)
+            cls._append_field(parts, "count", symbol.get("count"))
+            cls._append_field(parts, "rarity", symbol.get("rarity"))
+            cls._append_field(parts, "value", symbol.get("value"))
+            cls._append_field(
+                parts,
+                "value_text",
+                symbol.get("value_text"),
+                quote=True,
+            )
+            cls._append_field(
+                parts,
+                "permanent_bonus",
+                symbol.get("permanent_bonus"),
+                quote=True,
+            )
+            cls._append_field(
+                parts,
+                "permanent_multiplier",
+                symbol.get("permanent_multiplier"),
+                quote=True,
+            )
+            cls._append_field(parts, "times_displayed", symbol.get("times_displayed"))
+            lines.append("- " + ", ".join(parts))
+            description = symbol.get("description")
+            if description:
+                lines.append(f"  effect: {description}")
+            groups = symbol.get("groups") or []
+            if groups:
+                lines.append("  groups: " + ", ".join(str(group) for group in groups))
+        return "\n".join(lines)
+
+    @staticmethod
+    def _append_field(
+        parts: list[str],
+        name: str,
+        value: Any,
+        *,
+        quote: bool = False,
+    ) -> None:
+        if value is None or value == "":
+            return
+        rendered = f'"{value}"' if quote else str(value)
+        parts.append(f"{name}={rendered}")
+
+    @staticmethod
+    def _tool_call_id(call: Any, *, step: int | None, turn: int) -> str:
+        return str(getattr(call, "id", None) or f"tool_call_{step}_{turn}")
+
+    @staticmethod
+    def _assistant_tool_message(
+        message: Any,
+        call: Any,
+        *,
+        tool_call_id: str,
+    ) -> dict[str, Any]:
+        tool_call = jsonable(call)
+        if isinstance(tool_call, dict):
+            tool_call = {**tool_call, "id": tool_call_id}
+        return {
+            "role": "assistant",
+            "content": getattr(message, "content", None) or "",
+            "tool_calls": [tool_call],
+        }
 
     @staticmethod
     def _choice_score(choice: dict[str, Any]) -> float:

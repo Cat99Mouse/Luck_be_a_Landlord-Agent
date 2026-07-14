@@ -37,8 +37,11 @@ class LBALInstance:
         if self._process is not None:
             raise RuntimeError("Instance already started")
         self._config.validate()
-        timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-        session_dir = Path(self._config.logs_path) / timestamp
+        if self._config.session_log_dir:
+            session_dir = Path(self._config.session_log_dir)
+        else:
+            timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+            session_dir = Path(self._config.logs_path) / timestamp
         session_dir.mkdir(parents=True, exist_ok=True)
         self._log_path = session_dir / f"{self._config.port}.log"
 
@@ -99,4 +102,3 @@ class LBALInstance:
 
     async def __aexit__(self, *_args) -> None:
         await self.stop()
-

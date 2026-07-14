@@ -1,20 +1,4 @@
 {
-  "OBSERVATION": [
-    {
-      "type": "function",
-      "function": {
-        "name": "inspect_symbol_inventory",
-        "description": "Inspect the full current stored symbol inventory. This does not change game state.",
-        "parameters": {
-          "type": "object",
-          "properties": {
-            "reasoning": {"type": "string"}
-          },
-          "required": []
-        }
-      }
-    }
-  ],
   "SLOTS": [
     {
       "type": "function",
@@ -24,11 +8,7 @@
         "parameters": {
           "type": "object",
           "properties": {
-            "reasoning": {"type": "string"},
-            "memory_update": {
-              "type": "string",
-              "description": "Updated concise global run memory, max 1200 characters. Replace the prior memory; do not append full history."
-            }
+            "reasoning": {"type": "string"}
           },
           "required": []
         }
@@ -43,11 +23,7 @@
           "type": "object",
           "properties": {
             "symbol": {"type": "string"},
-            "reasoning": {"type": "string"},
-            "memory_update": {
-              "type": "string",
-              "description": "Updated concise global run memory, max 1200 characters. Replace the prior memory; do not append full history."
-            }
+            "reasoning": {"type": "string"}
           },
           "required": ["symbol"]
         }
@@ -62,11 +38,7 @@
           "type": "object",
           "properties": {
             "item": {"type": "string"},
-            "reasoning": {"type": "string"},
-            "memory_update": {
-              "type": "string",
-              "description": "Updated concise global run memory, max 1200 characters. Replace the prior memory; do not append full history."
-            }
+            "reasoning": {"type": "string"}
           },
           "required": ["item"]
         }
@@ -83,11 +55,7 @@
           "type": "object",
           "properties": {
             "choice": {"type": "string"},
-            "reasoning": {"type": "string"},
-            "memory_update": {
-              "type": "string",
-              "description": "Updated concise global run memory, max 1200 characters. Replace the prior memory; do not append full history."
-            }
+            "reasoning": {"type": "string"}
           },
           "required": ["choice"]
         }
@@ -101,11 +69,7 @@
         "parameters": {
           "type": "object",
           "properties": {
-            "reasoning": {"type": "string"},
-            "memory_update": {
-              "type": "string",
-              "description": "Updated concise global run memory, max 1200 characters. Replace the prior memory; do not append full history."
-            }
+            "reasoning": {"type": "string"}
           },
           "required": []
         }
@@ -119,11 +83,7 @@
         "parameters": {
           "type": "object",
           "properties": {
-            "reasoning": {"type": "string"},
-            "memory_update": {
-              "type": "string",
-              "description": "Updated concise global run memory, max 1200 characters. Replace the prior memory; do not append full history."
-            }
+            "reasoning": {"type": "string"}
           },
           "required": []
         }
@@ -138,11 +98,7 @@
           "type": "object",
           "properties": {
             "index": {"type": "integer", "minimum": 0},
-            "reasoning": {"type": "string"},
-            "memory_update": {
-              "type": "string",
-              "description": "Updated concise global run memory, max 1200 characters. Replace the prior memory; do not append full history."
-            }
+            "reasoning": {"type": "string"}
           },
           "required": ["index"]
         }

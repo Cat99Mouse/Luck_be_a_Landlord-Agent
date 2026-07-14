@@ -15,9 +15,10 @@ class RunMemory:
     def __init__(
         self,
         *,
-        max_recent_decisions: int = 8,
-        max_recent_spins: int = 8,
-        max_permanent_changes: int = 16,
+        max_recent_decisions: int = 10,
+        max_recent_spins: int = 10,
+        max_permanent_changes: int = 10,
+        max_global_memory_chars: int = 1200,
     ) -> None:
         self.recent_decisions: deque[dict[str, Any]] = deque(
             maxlen=max_recent_decisions
@@ -34,6 +35,8 @@ class RunMemory:
         self._cycle_spin_gains: list[float | int] = []
         self._pending_rent_key: tuple[int | None, int | None] | None = None
         self._pending_spin: dict[str, Any] | None = None
+        self.global_memory = ""
+        self.max_global_memory_chars = max_global_memory_chars
 
     def observe_state(self, gamestate: dict[str, Any], *, step: int | None = None) -> None:
         """Update memory from a gamestate returned by the bridge."""
@@ -88,9 +91,17 @@ class RunMemory:
         self.recent_decisions.append(entry)
         self._record_permanent_change(step=step, action=action, args=args, result=result)
 
+    def update_global(self, value: Any) -> None:
+        """Replace the LLM-maintained global run memory with a bounded note."""
+        text = str(value or "").strip()
+        if not text:
+            return
+        self.global_memory = self._truncate(text, self.max_global_memory_chars)
+
     def snapshot(self) -> dict[str, Any]:
         """Return JSON-serializable memory for prompt rendering and traces."""
         return {
+            "global_memory": self.global_memory,
             "current_rent_cycle": self._rent_cycle_snapshot(),
             "recent_spin_income": list(self.recent_spin_income),
             "recent_decisions": list(self.recent_decisions),

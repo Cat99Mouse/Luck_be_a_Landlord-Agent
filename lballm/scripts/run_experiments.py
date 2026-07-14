@@ -93,6 +93,44 @@ def _config_overrides(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
     return fields, model_config
 
 
+def _planned_field(
+    base: Config,
+    common: dict[str, Any],
+    model_entry: dict[str, Any],
+    field: str,
+) -> Any:
+    if field in model_entry:
+        return model_entry[field]
+    if field in common:
+        return common[field]
+    return getattr(base, field)
+
+
+def _model_label(
+    base: Config,
+    common: dict[str, Any],
+    model_entry: dict[str, Any],
+    *,
+    control_mode_override: str | None = None,
+) -> str:
+    if model_entry.get("name"):
+        return str(model_entry["name"])
+    model = str(model_entry.get("model") or base.model or "model")
+    mode = str(
+        control_mode_override
+        or _planned_field(base, common, model_entry, "control_mode")
+        or "agent"
+    )
+    return f"{model}-{mode}"
+
+
+def _normalize_run_config(config: Config) -> Config:
+    """Apply Config.load post-processing after experiment overrides."""
+    if config.control_mode == "chatbot" and config.strategy == "default":
+        return replace(config, strategy="chatbot")
+    return config
+
+
 def _build_run_config(
     base: Config,
     *,
@@ -100,6 +138,7 @@ def _build_run_config(
     model_entry: dict[str, Any],
     logs_path: Path,
     trace_path: Path,
+    control_mode_override: str | None = None,
 ) -> Config:
     common_fields, common_model_config = _config_overrides(common)
     model_fields, model_model_config = _config_overrides(model_entry)
@@ -112,11 +151,14 @@ def _build_run_config(
         "trace_path": str(trace_path),
         "model_config": model_config,
     }
-    return replace(base, **fields)
+    if control_mode_override is not None:
+        fields["control_mode"] = control_mode_override
+    return _normalize_run_config(replace(base, **fields))
 
 
 def _public_config(config: Config) -> dict[str, Any]:
     return {
+        "control_mode": config.control_mode,
         "provider": config.provider,
         "model": config.model,
         "strategy": config.strategy,
@@ -215,9 +257,22 @@ async def _run_all(args: argparse.Namespace) -> int:
     results_path = experiment_dir / "results.jsonl"
 
     plan: list[tuple[str, int, Config]] = []
+    label_counts: dict[str, int] = {}
     for model_entry in models:
-        label = str(model_entry.get("name") or model_entry.get("model") or "model")
-        safe_label = _safe_path_part(label)
+        label = _model_label(
+            base,
+            common,
+            model_entry,
+            control_mode_override=args.control_mode,
+        )
+        safe_label_base = _safe_path_part(label)
+        label_counts[safe_label_base] = label_counts.get(safe_label_base, 0) + 1
+        label_count = label_counts[safe_label_base]
+        safe_label = (
+            safe_label_base
+            if label_count == 1
+            else f"{safe_label_base}-{label_count:02d}"
+        )
         for run_index in range(1, runs_per_model + 1):
             run_dir = experiment_dir / safe_label / f"run-{run_index:02d}"
             cfg = _build_run_config(
@@ -226,6 +281,7 @@ async def _run_all(args: argparse.Namespace) -> int:
                 model_entry=model_entry,
                 logs_path=run_dir / "game",
                 trace_path=run_dir / "trace",
+                control_mode_override=args.control_mode,
             )
             cfg.validate()
             plan.append((label, run_index, cfg))
@@ -236,8 +292,9 @@ async def _run_all(args: argparse.Namespace) -> int:
     print(f"Runs: {len(plan)} ({len(models)} models x {runs_per_model})")
     for label, run_index, cfg in plan:
         print(
-            f"- {label} run {run_index}: provider={cfg.provider} "
-            f"model={cfg.model} trace={cfg.trace_path}"
+            f"- {label} run {run_index}: mode={cfg.control_mode} "
+            f"provider={cfg.provider} model={cfg.model} "
+            f"strategy={cfg.strategy} trace={cfg.trace_path}"
         )
 
     if args.dry_run:
@@ -248,7 +305,7 @@ async def _run_all(args: argparse.Namespace) -> int:
         for ordinal, (label, run_index, cfg) in enumerate(plan, 1):
             print(
                 f"\n[{ordinal}/{len(plan)}] Running {label} "
-                f"run {run_index} ({cfg.model})"
+                f"run {run_index} ({cfg.control_mode}, {cfg.model})"
             )
             record: dict[str, Any] = {
                 "ts": datetime.now().isoformat(timespec="seconds"),
@@ -326,6 +383,11 @@ def main() -> None:
         "--runs",
         type=int,
         help="Override runs_per_model from the experiment YAML.",
+    )
+    parser.add_argument(
+        "--control-mode",
+        choices=["agent", "chatbot"],
+        help="Override control_mode for every planned run.",
     )
     parser.add_argument(
         "--name",

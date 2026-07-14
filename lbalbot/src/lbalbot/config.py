@@ -46,6 +46,7 @@ class Config:
     port: int = 12346
     game_path: str | None = None
     logs_path: str = "logs"
+    session_log_dir: str | None = None
 
     @classmethod
     def from_env(cls) -> Self:
@@ -74,4 +75,3 @@ class Config:
             raise ValueError("game_path is required")
         if not Path(self.game_path).exists():
             raise FileNotFoundError(self.game_path)
-

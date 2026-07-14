@@ -49,10 +49,19 @@ class Strategy:
             state = str(current.get("state", ""))
 
         if state == "SLOTS":
-            return self._slots_tools(current)
+            return self._with_observation_tools(self._slots_tools(current))
         if state in {"ADD_TILE", "ADD_ITEM", "RENT_DUE"}:
-            return self._choice_tools(current)
-        return self._choice_tools(current)
+            return self._with_observation_tools(self._choice_tools(current))
+        return self._with_observation_tools(self._choice_tools(current))
+
+    def _with_observation_tools(
+        self,
+        tools: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        return [
+            *tools,
+            *[deepcopy(tool) for tool in self.tools.get("OBSERVATION", [])],
+        ]
 
     def _slots_tools(self, gamestate: dict[str, Any]) -> list[dict[str, Any]]:
         tool_by_name = {

@@ -11,58 +11,20 @@ Resources:
 - reroll_tokens={{ G.get("reroll_tokens") }}, removal_tokens={{ G.get("removal_tokens") }}, essence_tokens={{ G.get("essence_tokens") }}
 - removal_cost={{ G.get("removal_cost") }}
 - current_floor={{ G.get("current_floor") }}, landlord_hp={{ G.get("landlord_hp") }}/{{ G.get("landlord_max_hp") }}
-{% set show_deck_facts = G.get("state") == "SLOTS" or ((G.get("choices") or []) | length > 0) %}
-{% if show_deck_facts %}
-{% set deck = namespace(display_cap=0) %}
-{% for r in G.get("symbols") or [] %}
-{% set deck.display_cap = deck.display_cap + ((r.get("icon_types") or []) | length) %}
-{% endfor %}
-{% set display_cap = deck.display_cap %}
-
-Visible board facts:
-- display_cap={{ display_cap if display_cap > 0 else "?" }}
-{% endif %}
 
 Notes:
 - effective_coins = coins + queued_coins. queued_coins is pending coin animation, not next-spin income.
 - rent_gap = next_rent - effective_coins. Positive rent_gap means the current money is short of rent; zero or negative means current money can pay rent.
 
-Run memory:
-Global memory:
-{% if M.get("global_memory") %}
-{{ M.get("global_memory") }}
-{% else %}
-- none
-{% endif %}
-
-{% set cycle = M.get("current_rent_cycle") %}
-Current rent cycle observed in this run:
-{% if cycle %}
-- target={{ cycle.get("rent_target") }}, spins_used={{ cycle.get("spins_used") }}/{{ cycle.get("spins_total") }}, spins_remaining={{ cycle.get("spins_remaining") }}, start_effective_coins={{ cycle.get("cycle_start_effective_coins") }}, current_effective_coins={{ cycle.get("current_effective_coins") }}, rent_gap={{ cycle.get("rent_gap") }}, total_net_gain={{ cycle.get("net_gain") }}, spin_net_gain={{ cycle.get("spin_net_gain") }}, spins_recorded={{ cycle.get("spins_recorded") }}
-{% else %}
-- unavailable
-{% endif %}
-Recent spin net income:
-{% if M.get("recent_spin_income") %}
-{% for spin in M.get("recent_spin_income") %}
-- step={{ spin.get("step") }}, net_gain={{ spin.get("net_gain") }}, before={{ spin.get("before_effective_coins") }}, after={{ spin.get("after_effective_coins") }}, result_state={{ spin.get("result_state") }}, rent_values={{ spin.get("rent_values") }}
-{% endfor %}
-{% else %}
-- none
-{% endif %}
-Recent decisions:
-{% if M.get("recent_decisions") %}
-{% for d in M.get("recent_decisions") %}
-- step={{ d.get("step") }}, action={{ d.get("action") }}{% if d.get("target") %}, target=`{{ d.get("target") }}`{% endif %}, result_state={{ d.get("result_state") }}, effective_coins={{ d.get("coins") }}, rent_values={{ d.get("rent_values") }}
+Recent successful actions:
+{% if M.get("recent_successful_actions") %}
+{% for d in M.get("recent_successful_actions") %}
+- step={{ d.get("step") }}, action={{ d.get("action") }}{% if d.get("target") %}, target=`{{ d.get("target") }}`{% endif %}, result_state={{ d.get("result_state") }}, effective_coins={{ d.get("effective_coins") }}, rent_values={{ d.get("rent_values") }}
   {% if d.get("reasoning") %}reasoning: {{ d.get("reasoning") }}{% endif %}
 {% endfor %}
 {% else %}
 - none
 {% endif %}
-Permanent changes made in this run:
-{% set changes = M.get("permanent_changes") or {} %}
-- previously_removed_symbols={% if changes.get("previously_removed_symbols") %}{{ changes.get("previously_removed_symbols") }}{% else %}none{% endif %}
-- destroyed_items={% if changes.get("destroyed_items") %}{{ changes.get("destroyed_items") }}{% else %}none{% endif %}
 
 Pre-spin actions:
 {% set is_slots = G.get("state") == "SLOTS" %}

@@ -1,14 +1,50 @@
-单局游戏：
-.\.venv\Scripts\lballm.exe --config .\config\local.yaml --verbose
-日志位置：
-agent trace：logs\lballm-agent-时间-模型\
-游戏进程日志：logs\时间\12346.log
-
-多模型批量实验：（默认每个模型三局游戏）
+使用前先进入 lballm 目录：
 cd 路径\Luck_be_a_Landlord_Agent\lballm
-先预览计划：
+
+
+单局游戏：
+
+agent 模式（默认）：
+.\.venv\Scripts\lballm.exe --config .\config\local.yaml --verbose
+
+agent 单局日志位置：
+logs\agent\lballm-agent-时间-模型\
+  lballm-agent-时间-模型.jsonl
+  requests.jsonl
+  responses.jsonl
+  global_memory.jsonl
+  12346.log
+
+
+chatbot 模式：
+.\.venv\Scripts\lballm.exe --config .\config\local.yaml --control-mode chatbot --verbose
+
+chatbot 单局日志位置：
+logs\chatbot\lballm-chatbot-时间-模型\
+  lballm-chatbot-时间-模型.jsonl
+  requests.jsonl
+  responses.jsonl
+  12346.log
+
+
+多模型批量实验：（默认每个模型三局游戏，见 config\experiments.yaml）
+
+预览默认计划：
 uv run python scripts\run_experiments.py --config config\experiments.yaml --dry-run
-正式运行：
+
+正式运行默认计划：
 uv run python scripts\run_experiments.py --config config\experiments.yaml
-日志位置：
-logs\experiments\时间戳\results.jsonl
+
+强制所有实验使用 chatbot 模式，不需要修改配置文件：
+uv run python scripts\run_experiments.py --config config\experiments.yaml --control-mode chatbot --dry-run
+uv run python scripts\run_experiments.py --config config\experiments.yaml --control-mode chatbot
+
+批量实验日志位置：
+logs\experiments\时间戳\
+  results.jsonl
+  模型名或模型名-模式\run-01\trace\
+    trace.jsonl
+    requests.jsonl
+    responses.jsonl
+    12346.log
+    global_memory.jsonl（agent 模式有全局记忆更新时生成）

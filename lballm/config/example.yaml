@@ -1,8 +1,14 @@
+# control_mode:
+# - agent: default multi-turn controller with inspect_symbol_inventory and global memory.
+# - chatbot: single-turn controller without observation tools.
+control_mode: agent
 provider: qwen
 model: qwen-plus
 base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 host: 127.0.0.1
 port: 12346
+# Leave as default for agent mode. If control_mode is chatbot and strategy is
+# default, lballm automatically switches to the chatbot strategy.
 strategy: default
 # Optional safety limit. Omit or leave unset to run until the game naturally ends.
 # max_steps: 300
@@ -11,8 +17,13 @@ start_action: new
 fallback_to_heuristic: true
 # game_path: C:\Program Files (x86)\Steam\steamapps\common\Luck be a Landlord\Luck be a Landlord.exe
 logs_path: logs
+# The default logs path is split by mode at runtime:
+# agent -> logs/agent, chatbot -> logs/chatbot.
 trace_enabled: true
-# trace_path: logs/lballm-agent.jsonl
+# Optional fixed trace file. With a suffix, artifacts are written under the
+# trace stem, e.g. logs/latest-agent/latest-agent.jsonl, requests.jsonl,
+# responses.jsonl.
+# trace_path: logs/latest-agent.jsonl
 model_config:
   parallel_tool_calls: false
   tool_choice: auto

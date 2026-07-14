@@ -84,6 +84,21 @@ Copy-Item .\config\api.example.yaml .\config\local.yaml
 uv run lballm --config .\config\local.yaml --verbose
 ```
 
+## 模式与新增功能
+
+`lballm` 当前支持两种控制流程模式：
+
+- `agent`：默认模式。支持工具调用、多轮“观察后行动”、完整储物间观察工具 `inspect_symbol_inventory`、全局记忆段落和详细 JSONL trace。
+- `chatbot`：单轮决策模式。默认使用 `chatbot` 策略，不暴露观察工具，只把最近成功动作作为短上下文。
+
+`provider` 与控制模式是两类配置：`qwen` / `openai` / `heuristic` 决定决策来源，`agent` / `chatbot` 决定 prompt 和工具流程。无模型本地验证可继续使用：
+
+```powershell
+uv run lballm --provider heuristic --max-steps 20
+```
+
+默认日志会按模式保存到 `lballm/logs/agent/` 或 `lballm/logs/chatbot/`。每局运行目录包含主 trace、`requests.jsonl`、`responses.jsonl`，agent 模式还会记录 `global_memory.jsonl`。详见 [LBALLM 说明](./lballm/README.md)。
+
 ## 重要说明
 
 - 不要提交 `dll/`，其中包含本地游戏文件。
@@ -183,6 +198,30 @@ Copy-Item .\config\api.example.yaml .\config\local.yaml
 # Edit config\local.yaml with provider, model, base_url, and api_key.
 uv run lballm --config .\config\local.yaml --verbose
 ```
+
+## Modes and New Features
+
+`lballm` currently supports two control-flow modes:
+
+- `agent`: the default mode. It supports tool calling, inspect-then-act
+  decisions, the `inspect_symbol_inventory` observation tool, a compact global
+  memory paragraph, and detailed JSONL traces.
+- `chatbot`: a single-turn decision mode. It uses the `chatbot` strategy by
+  default, does not expose observation tools, and only keeps recent successful
+  actions as short context.
+
+`provider` and control mode are separate settings. `qwen` / `openai` /
+`heuristic` choose the decision source, while `agent` / `chatbot` choose the
+prompt and tool flow. A no-model local smoke test still works with:
+
+```powershell
+uv run lballm --provider heuristic --max-steps 20
+```
+
+Default logs are split into `lballm/logs/agent/` or `lballm/logs/chatbot/`.
+Each run directory contains the main trace, `requests.jsonl`, and
+`responses.jsonl`; agent mode also records `global_memory.jsonl`. See
+[LBALLM README](./lballm/README.md) for details.
 
 ## Important Notes
 

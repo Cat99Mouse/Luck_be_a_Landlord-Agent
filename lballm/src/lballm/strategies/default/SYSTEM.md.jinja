@@ -22,7 +22,8 @@ Game Rules
 - Symbols remain in the symbol inventory until removed or destroyed.
 - Items remain active until destroyed unless their documented effects state
   otherwise.
-- A spin resolves documented symbol and item effects.
+- Spins may produce coins according to documented effects of active symbols and
+  items.
 - Rent becomes due when `spins_until_rent` reaches 0.
 - If `effective_coins` is less than the required rent when rent is due, the run
   ends.
@@ -33,12 +34,9 @@ State Fields
   spins.
 - `effective_coins` is the amount used for rent accounting.
 - `display_cap` is the number of slot positions reported in the current state.
-- `symbol_count_total` is the total number of currently reported inventory
-  symbols.
-- `over_cap` is the amount above `display_cap`, if any.
-- Adding a symbol increases `symbol_count_total`. Removing a symbol decreases
-  `symbol_count_total`. Adding or removing an item changes only the item
-  inventory unless the item effect says otherwise.
+- The full stored symbol inventory is not shown by default.
+- Adding or removing a symbol changes the symbol inventory. Adding or removing
+  an item changes only the item inventory unless the item effect says otherwise.
 
 Descriptions And Structured Fields
 
@@ -52,8 +50,8 @@ Descriptions And Structured Fields
 - Do not invent hidden effects for a symbol or item. If an effect is not shown
   in the state and you are not certain, treat it as uncertain in the reasoning.
 - Run memory is a fact summary generated from prior observed states and executed
-  actions. It may omit information or become inconsistent with the provided
-  state.
+  actions. It may be useful for continuity, but the provided state wins on
+  conflict.
 
 Choice Events
 
@@ -71,6 +69,21 @@ choice actions are limited to currently exposed tools.
   choosing a visible item or symbol whose type string happens to be `reroll`.
 - `press_button` presses one visible event button by index when that tool is
   exposed.
+
+Observation Tools
+
+- `inspect_symbol_inventory` returns the full current stored symbol inventory
+  available from the current state. It does not change game state.
+- Use observation tools when hidden prompt information is needed for the
+  decision.
+- In `ADD_TILE` and `ADD_ITEM`, call `inspect_symbol_inventory` before choosing
+  when the best option depends on existing stored symbols, duplicates, synergies,
+  deck composition, crowding, or likely future removals.
+- Do not claim facts about the full stored symbol inventory unless they were
+  shown in the current prompt, visible removable-symbol list, or an observation
+  result.
+- After receiving an observation result, return exactly one legal game action
+  tool call.
 
 Slot Phase
 
@@ -90,6 +103,16 @@ tools.
 - Removal and destruction are different game actions. Destroyed symbols or items
   may trigger destruction effects. Removal should not be assumed to trigger
   destruction effects unless explicitly documented.
+
+Global Memory
+
+- Game action tools may include an optional `memory_update` field.
+- `memory_update` replaces the global memory shown in future
+  prompts. Keep it as one concise paragraph, no more than 1200 characters.
+- Preserve only useful long-running facts, active synergies, risks, commitments,
+  and stale-fact corrections. Do not append a full history.
+- Global memory is a working note, not authoritative. Current state, visible
+  tool results, and structured fields override it on conflict.
 
 Tool Rules
 

@@ -5,6 +5,9 @@
 #
 # Preview without starting games:
 #   uv run python scripts/run_experiments.py --config config/experiments.yaml --dry-run
+#
+# Force all runs to chatbot mode without editing this file:
+#   uv run python scripts/run_experiments.py --config config/experiments.yaml --control-mode chatbot
 
 base_config: local.yaml
 runs_per_model: 3
@@ -18,6 +21,20 @@ overrides:
   start_action: new
   trace_enabled: true
 
+# To compare control modes for the same model, add separate entries. If a
+# chatbot entry leaves strategy as default, the runner normalizes it to chatbot.
+#
+#   - name: gpt-5.5-agent
+#     provider: openai
+#     model: gpt-5.5
+#     control_mode: agent
+#     strategy: default
+#
+#   - name: gpt-5.5-chatbot
+#     provider: openai
+#     model: gpt-5.5
+#     control_mode: chatbot
+#
 models:
   - name: gpt-5.4-mini
     provider: openai
