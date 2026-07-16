@@ -232,6 +232,8 @@ Each run directory may contain:
 - `requests.jsonl`, containing model request payloads and rendered prompts;
 - `responses.jsonl`, containing raw model responses;
 - `global_memory.jsonl`, containing global-memory changes in `agent` mode;
+- `storage_inventory.jsonl`, containing one post-spin storage snapshot per
+  completed spin, including `symbol_inventory` and `items`;
 - the LBALBot game bridge log, such as `12346.log`, when LBALLM starts the game.
 
 Use `--trace-path .\logs\latest-agent.jsonl` to choose a fixed trace file.

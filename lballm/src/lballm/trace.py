@@ -108,6 +108,25 @@ class RunTrace:
             f.write(json.dumps(data, ensure_ascii=False, default=str) + "\n")
         return str(path)
 
+    def write_storage_inventory_snapshot(
+        self,
+        *,
+        step: int | None,
+        payload: dict[str, Any],
+    ) -> str | None:
+        """Append a post-spin storage inventory snapshot to storage_inventory.jsonl."""
+        if not self.enabled or self.artifact_dir is None:
+            return None
+        path = self.artifact_dir / "storage_inventory.jsonl"
+        data = {
+            "ts": datetime.now().isoformat(timespec="milliseconds"),
+            "step": step,
+            **payload,
+        }
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(data, ensure_ascii=False, default=str) + "\n")
+        return str(path)
+
     def _llm_artifact_path(self, kind: str) -> Path:
         if self.artifact_dir is None:
             raise RuntimeError("trace artifact directory is not initialized")

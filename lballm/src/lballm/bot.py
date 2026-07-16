@@ -46,6 +46,8 @@ class Bot:
         self.memory = (
             ChatbotMemory() if config.control_mode == "chatbot" else RunMemory()
         )
+        self._pending_storage_inventory_snapshot: dict[str, Any] | None = None
+        self._last_storage_inventory_snapshot_spin: Any = None
 
     async def play(self) -> dict[str, Any]:
         """Run a game loop and return the final gamestate."""
@@ -111,7 +113,11 @@ class Bot:
                                     step=step,
                                 )
                         else:
-                            self.memory.begin_spin(gamestate, step=step)
+                            self._begin_spin_tracking(
+                                gamestate,
+                                step=step,
+                                source="auto",
+                            )
                             gamestate = await self._call_game(
                                 "spin",
                                 step=step,
@@ -180,6 +186,8 @@ class Bot:
         try:
             result = await self.client.call(method, call_params)
         except Exception as e:
+            if method == "spin":
+                self._pending_storage_inventory_snapshot = None
             self.trace.write(
                 "action_error",
                 step=step,
@@ -199,7 +207,100 @@ class Bot:
             result=result,
         )
         self.memory.observe_state(result, step=step)
+        self._maybe_write_storage_inventory_snapshot(
+            result,
+            step=step,
+            source=source,
+            method=method,
+        )
         return result
+
+    def _begin_spin_tracking(
+        self,
+        gamestate: dict[str, Any],
+        *,
+        step: int | None,
+        source: str,
+    ) -> None:
+        self.memory.begin_spin(gamestate, step=step)
+        if not self._is_gamestate(gamestate):
+            return
+        self._pending_storage_inventory_snapshot = {
+            "step": step,
+            "source": source,
+            "spins_before": gamestate.get("spins"),
+            "state_before": gamestate.get("state"),
+            "coins_before": gamestate.get("coins"),
+            "queued_coins_before": gamestate.get("queued_coins"),
+            "effective_coins_before": gamestate.get("effective_coins"),
+            "rent_values_before": self._copy_list(gamestate.get("rent_values")),
+            "times_rent_paid_before": gamestate.get("times_rent_paid"),
+        }
+
+    def _maybe_write_storage_inventory_snapshot(
+        self,
+        gamestate: dict[str, Any],
+        *,
+        step: int | None,
+        source: str,
+        method: str,
+    ) -> None:
+        pending = self._pending_storage_inventory_snapshot
+        if pending is None or not self._is_gamestate(gamestate):
+            return
+        if gamestate.get("state") == "SPINNING" or not gamestate.get("stable", True):
+            return
+
+        spins = gamestate.get("spins")
+        if spins is not None and spins == self._last_storage_inventory_snapshot_spin:
+            self._pending_storage_inventory_snapshot = None
+            return
+
+        symbols = [
+            symbol
+            for symbol in gamestate.get("symbol_inventory") or []
+            if isinstance(symbol, dict)
+        ]
+        items = [
+            item
+            for item in gamestate.get("items") or []
+            if isinstance(item, dict)
+        ]
+        self.trace.write_storage_inventory_snapshot(
+            step=step,
+            payload={
+                "spin_step": pending.get("step"),
+                "spin_source": pending.get("source"),
+                "observed_source": source,
+                "observed_method": method,
+                "spins_before": pending.get("spins_before"),
+                "spins": spins,
+                "state_before": pending.get("state_before"),
+                "state": gamestate.get("state"),
+                "stable": gamestate.get("stable"),
+                "coins_before": pending.get("coins_before"),
+                "coins": gamestate.get("coins"),
+                "queued_coins_before": pending.get("queued_coins_before"),
+                "queued_coins": gamestate.get("queued_coins"),
+                "effective_coins_before": pending.get("effective_coins_before"),
+                "effective_coins": gamestate.get("effective_coins"),
+                "rent_values_before": pending.get("rent_values_before"),
+                "rent_values": self._copy_list(gamestate.get("rent_values")),
+                "times_rent_paid_before": pending.get("times_rent_paid_before"),
+                "times_rent_paid": gamestate.get("times_rent_paid"),
+                "times_to_pay_rent": gamestate.get("times_to_pay_rent"),
+                "removal_tokens": gamestate.get("removal_tokens"),
+                "reroll_tokens": gamestate.get("reroll_tokens"),
+                "symbol_count_total": sum(
+                    self._int_value(symbol.get("count")) for symbol in symbols
+                ),
+                "item_count": len(items),
+                "symbol_inventory": symbols,
+                "items": items,
+            },
+        )
+        self._last_storage_inventory_snapshot_spin = spins
+        self._pending_storage_inventory_snapshot = None
 
     async def _wait_for_stable(
         self,
@@ -573,7 +674,7 @@ class Bot:
                 raise BotError("reroll_choices requires reroll tokens")
             result = await self._call_game("reroll", step=step, source=source)
         elif fn_name == "spin":
-            self.memory.begin_spin(gamestate, step=step)
+            self._begin_spin_tracking(gamestate, step=step, source=source)
             result = await self._call_game("spin", step=step, source=source)
         elif fn_name == "remove_symbol":
             if "symbol" not in args:
@@ -724,7 +825,7 @@ class Bot:
             return await self._wait_for_stable(step=step)
         if state == "SLOTS":
             self.trace.write("heuristic_decision", step=step, method="spin")
-            self.memory.begin_spin(gamestate, step=step)
+            self._begin_spin_tracking(gamestate, step=step, source="heuristic")
             result = await self._call_game("spin", step=step, source="heuristic")
             self.memory.record_decision(
                 step=step,
@@ -796,6 +897,14 @@ class Bot:
         return bool(
             gamestate.get("removable_symbols") or gamestate.get("destroyable_items")
         )
+
+    @staticmethod
+    def _is_gamestate(value: Any) -> bool:
+        return isinstance(value, dict) and isinstance(value.get("state"), str)
+
+    @staticmethod
+    def _copy_list(value: Any) -> list[Any]:
+        return list(value) if isinstance(value, list) else []
 
     @classmethod
     def _render_symbol_inventory_observation(cls, gamestate: dict[str, Any]) -> str:
